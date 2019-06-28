@@ -7,6 +7,7 @@ import json
 import os
 import shutil
 import time
+import traceback
 
 import numpy as np
 import torch
@@ -175,7 +176,8 @@ def decodeWrapper():
         args.model_path = args.model_path + '-' + str(ii)
         try:
             decode(ii)
-        except:
+        except Exception as e:
+            print(traceback.format_exc())
             print('cannot decode')
 
         args.model_path = args.original

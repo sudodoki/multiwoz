@@ -5,8 +5,11 @@ import math
 import operator
 import os
 import random
+import functools
 from io import open
-from Queue import PriorityQueue
+from queue import PriorityQueue
+from dataclasses import dataclass, field
+from typing import Any
 
 import numpy as np
 import torch
@@ -14,7 +17,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch import optim
 
-import policy
+from model import policy
 
 SOS_token = 0
 EOS_token = 1
@@ -22,8 +25,15 @@ UNK_token = 2
 PAD_token = 3
 
 
+# https://bugs.python.org/issue31145 workaround PriorityQueue change
+@dataclass(order=True)
+class PrioritizedItem:
+    priority: int
+    item: Any = field(compare=False)
+
+
 # Shawn beam search decoding
-class BeamSearchNode(object):
+class BeamSearchNode:
     def __init__(self, h, prevNode, wordid, logp, leng):
         self.h = h
         self.prevNode = prevNode
@@ -36,7 +46,6 @@ class BeamSearchNode(object):
         alpha = 1.0
 
         return self.logp / float(self.leng - 1 + 1e-6) + alpha * reward
-
 
 def init_lstm(cell, gain=1):
     init_gru(cell, gain)
@@ -425,7 +434,7 @@ class Model(nn.Module):
                 # starting node hidden vector, prevNode, wordid, logp, leng,
                 node = BeamSearchNode(decoder_hidden, None, decoder_input, 0, 1)
                 nodes = PriorityQueue()  # start the queue
-                nodes.put((-node.eval(None, None, None, None),
+                nodes.put(PrioritizedItem(-node.eval(None, None, None, None),
                            node))
 
                 # start beam search
@@ -435,7 +444,8 @@ class Model(nn.Module):
                     if qsize > 2000: break
 
                     # fetch the best node
-                    score, n = nodes.get()
+                    node = nodes.get()
+                    score, n = node.priority, node.item
                     decoder_input = n.wordid
                     decoder_hidden = n.h
 
@@ -464,14 +474,16 @@ class Model(nn.Module):
                     # put them into queue
                     for i in range(len(nextnodes)):
                         score, nn = nextnodes[i]
-                        nodes.put((score, nn))
+                        nodes.put(PrioritizedItem(score, nn))
 
                     # increase qsize
                     qsize += len(nextnodes)
 
                 # choose nbest paths, back trace them
                 if len(endnodes) == 0:
-                    endnodes = [nodes.get() for n in range(self.topk)]
+                    for n in range(self.topk):
+                        node = nodes.get()
+                        endnodes.append((node.priority, node.item))
 
                 utterances = []
                 for score, n in sorted(endnodes, key=operator.itemgetter(0)):
@@ -535,7 +547,7 @@ class Model(nn.Module):
         torch.save(self.decoder.state_dict(), self.model_dir + self.model_name + '-' + str(iter) + '.dec')
 
         with open(self.model_dir + self.model_name + '.config', 'w') as f:
-            f.write(unicode(json.dumps(vars(self.args), ensure_ascii=False, indent=4)))
+            f.write(str(json.dumps(vars(self.args), ensure_ascii=False, indent=4)))
 
     def loadModel(self, iter=0):
         print('Loading parameters of iter %s ' % iter)
@@ -544,35 +556,35 @@ class Model(nn.Module):
         self.decoder.load_state_dict(torch.load(self.model_dir + self.model_name + '-' + str(iter) + '.dec'))
 
     def input_index2word(self, index):
-        if self.input_lang_index2word.has_key(index):
+        if index in self.input_lang_index2word:
             return self.input_lang_index2word[index]
         else:
             raise UserWarning('We are using UNK')
 
     def output_index2word(self, index):
-        if self.output_lang_index2word.has_key(index):
+        if index in self.output_lang_index2word:
             return self.output_lang_index2word[index]
         else:
             raise UserWarning('We are using UNK')
 
     def input_word2index(self, index):
-        if self.input_lang_word2index.has_key(index):
+        if index in self.input_lang_word2index:
             return self.input_lang_word2index[index]
         else:
             return 2
 
     def output_word2index(self, index):
-        if self.output_lang_word2index.has_key(index):
+        if index in self.output_lang_word2index:
             return self.output_lang_word2index[index]
         else:
             return 2
 
     def getCount(self):
-        learnable_parameters = filter(lambda p: p.requires_grad, self.parameters())
-        param_cnt = sum([reduce((lambda x, y: x * y), param.shape) for param in learnable_parameters])
+        learnable_parameters = list(filter(lambda p: p.requires_grad, self.parameters()))
+        param_cnt = sum([functools.reduce((lambda x, y: x * y), param.shape) for param in learnable_parameters])
         print('Model has', param_cnt, ' parameters.')
 
     def printGrad(self):
-        learnable_parameters = filter(lambda p: p.requires_grad, self.parameters())
+        learnable_parameters = list(filter(lambda p: p.requires_grad, self.parameters()))
         for idx, param in enumerate(learnable_parameters):
             print(param.grad, param.shape)

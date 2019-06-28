@@ -1,4 +1,6 @@
-# multiwoz
+# multiwoz py 3
+
+> Note: this is a port of [https://github.com/budzianowski/multiwoz](https://github.com/budzianowski/multiwoz) to python 3 done by [@anravich102](https://github.com/anravich102) and @sudodoki during [ciss #2](http://ciss.deephack.me).
 
 multiwoz is an open source toolkit for building end-to-end trainable task-oriented dialogue models.
 It is released by Paweł Budzianowski from Cambridge Dialogue Systems Group under Apache License 2.0.
@@ -40,7 +42,7 @@ It is released by Paweł Budzianowski from Cambridge Dialogue Systems Group unde
 </div>
 
 # Requirements
-Python 2 with pip
+Python 3 with pip
 
 # Quick start
 In repo directory:
